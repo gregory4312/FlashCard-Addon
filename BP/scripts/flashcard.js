@@ -1,43 +1,27 @@
 import { world, system, Player } from "@minecraft/server";
 import { ModalFormData } from "@minecraft/server-ui";
 
+let playerTimers = new Map(); // Map to track timers for each player
 
-//Questions and Answers are referenced inside this file, not the .lang file
+// Global values
+const flashcardTriggerInterval = 30; // Interval in seconds
+const rewardType = "effect"; // Can be "effect" or "item"
+const effectReward = ["speed", 2, 10]; // Format: ["type_of_effect", "amplifier_int", "duration_in_seconds"]
+const itemReward = ["minecraft:diamond", 1]; // Format: ["type_of_item", "quantity"]
 
-let ingameSeconds = 10;
-
-// Assuming you have a translations object or a way to resolve keys
-const translations = {
-    "flashcard.1.question": "What's the capital of Japan?",
-    "flashcard.1.answer": "Tokyo",
-    "flashcard.2.question": "What is the chemical symbol for gold?",
-    "flashcard.2.answer": "Au",
-    "flashcard.3.question": "Who developed the theory of general relativity? (Last Name)",
-    "flashcard.3.answer": "Einstein",
-    "flashcard.4.question": "Which organ is responsible for pumping blood throughout the body?",
-    "flashcard.4.answer": "Heart",
-    "flashcard.5.question": "What is the largest desert in the world?",
-    "flashcard.5.answer": "Sahara",
-    "flashcard.6.question": "What is the process by which plants make their food using sunlight?",
-    "flashcard.6.answer": "Photosynthesis",
-    "flashcard.7.question": "What is the boiling point of water at standard atmospheric pressure? (Celsius)",
-    "flashcard.7.answer": "100",
-    "flashcard.8.question": "What is the powerhouse of the cell?",
-    "flashcard.8.answer": "Mitochondria",
-    "flashcard.9.question": "What force keeps planets in orbit around the sun?",
-    "flashcard.9.answer": "Gravity",
-    "flashcard.10.question": "What is the main gas found in the Earth's atmosphere?",
-    "flashcard.10.answer": "Nitrogen"
-};
-
-// Function to get translated text
-function getTranslatedText(key) {
-    return translations[key] || key;
+// Function to apply effect reward
+function applyEffectReward(player) {
+    const [effectType, amplifier, duration] = effectReward;
+    player.addEffect(effectType, duration * 20, { amplifier }); // Duration in ticks (20 ticks = 1 second)
+    player.sendMessage(`You received an effect: ${effectType} (Amplifier: ${amplifier}, Duration: ${duration}s)`);
 }
 
-// Function to get the number of flashcards
-function getFlashcardCount() {
-    return 10;
+// Function to give item reward
+function giveItemReward(player) {
+    const [itemType, quantity] = itemReward;
+    const inventory = player.getComponent("minecraft:inventory").container;
+    inventory.addItem({ item: itemType, amount: quantity });
+    player.sendMessage(`You received ${quantity}x ${itemType}`);
 }
 
 // Function to show flashcard form
@@ -60,9 +44,13 @@ function showFlashcardForm(player, flashcardNumber) {
             const correctAnswer = getTranslatedText(answerKey);
             if (userAnswer.toLowerCase() === correctAnswer.toLowerCase()) {
                 player.sendMessage("Correct answer!");
-                player.addEffect('speed', 200, {
-                    amplifier: 2,
-                });
+
+                // Apply reward based on the reward type
+                if (rewardType === "effect") {
+                    applyEffectReward(player);
+                } else if (rewardType === "item") {
+                    giveItemReward(player);
+                }
             } else {
                 player.addEffect('slowness', 200, {
                     amplifier: 2,
@@ -70,26 +58,40 @@ function showFlashcardForm(player, flashcardNumber) {
                 player.sendMessage("Incorrect answer. Slowness debuff applied. The correct answer is: " + correctAnswer);
             }
         }
+
+        // Start the countdown for this player after they respond or close the flashcard
+        playerTimers.set(player.name, 0);
     });
 }
 
-// Function to trigger flashcard every 30 seconds
-function thirtySecondsTick() {
+// Function to trigger flashcards for all players
+function flashcardTick() {
     const players = world.getPlayers();
-    if (players.length > 0) {
-        if (ingameSeconds >= 30) {
-            const randomPlayer = players[Math.floor(Math.random() * players.length)];
-            const flashcardCount = getFlashcardCount();
-            const flashcardNumber = Math.floor(Math.random() * flashcardCount) + 1;
-            showFlashcardForm(randomPlayer, flashcardNumber);
-            ingameSeconds = 0; // Reset the counter
-        } else {
-            ingameSeconds += 1;
-        }
-    }
+    const flashcardCount = getFlashcardCount();
 
-    system.runTimeout(thirtySecondsTick, 20); // Run every second (20 ticks)
+    players.forEach((player) => {
+        const playerName = player.name;
+
+        // Initialize timer for new players
+        if (!playerTimers.has(playerName)) {
+            playerTimers.set(playerName, flashcardTriggerInterval); // Use global interval
+        }
+
+        let timer = playerTimers.get(playerName);
+
+        if (timer <= 0) {
+            // Show a flashcard and reset the timer
+            const flashcardNumber = Math.floor(Math.random() * flashcardCount) + 1;
+            showFlashcardForm(player, flashcardNumber);
+            playerTimers.delete(playerName); // Remove timer until the player responds
+        } else {
+            // Decrease the timer
+            playerTimers.set(playerName, timer - 1);
+        }
+    });
+
+    system.runTimeout(flashcardTick, 20); // Run every second (20 ticks)
 }
 
 // Start the tick function
-thirtySecondsTick();
+flashcardTick();

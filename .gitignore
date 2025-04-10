@@ -6,3 +6,8 @@ Desktop.ini
 !.bridge/extensions
 .AddCompLib
 builds
+config.json
+deno.json
+.BP/scripts/flashcard---.js
+.BP/scripts/flashcard reference from .lang .js
+.BP/scripts/main.js
